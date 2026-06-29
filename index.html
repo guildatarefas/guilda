@@ -657,16 +657,16 @@ async function buildSupabaseStore(){
       const{data:mems}=await sb.from("members").select("*,guilds(*)").eq("user_id",this.session.user.id).limit(1);
       if(mems&&mems.length){this.me=mems[0]; this.guild=mems[0].guilds; this.guildId=mems[0].guild_id;}
     },
-    async members(){const{data}=await sb.from("members").select("*").eq("guild_id",this.guildId).order("created_at");return data||[];},
-    async saveMember(m){const{data}=await sb.from("members").update({display_name:m.display_name,can_assign:m.can_assign,can_manage:m.can_manage}).eq("id",m.id).select().single();return data;},
-    async heroes(){const{data}=await sb.from("heroes").select("*").eq("guild_id",this.guildId).order("created_at");return data||[];},
-    async quests(){const{data}=await sb.from("quests").select("*").eq("guild_id",this.guildId).order("created_at");return data||[];},
-    async completions(){const{data}=await sb.from("completions").select("*").eq("guild_id",this.guildId).order("completed_at",{ascending:false}).limit(800);return data||[];},
-    async saveHero(h){const{data}=await sb.from("heroes").upsert({...h,guild_id:this.guildId}).select().single();return data;},
-    async saveQuest(q){const{data}=await sb.from("quests").upsert({...q,guild_id:this.guildId}).select().single();return data;},
-    async deleteQuest(id){await sb.from("quests").delete().eq("id",id);},
-    async addCompletion(c){const{data}=await sb.from("completions").insert({...c,guild_id:this.guildId}).select().single();return data;},
-    async removeCompletion(id){await sb.from("completions").delete().eq("id",id);},
+    async members(){const{data,error}=await sb.from("members").select("*").eq("guild_id",this.guildId).order("created_at");if(error)throw error;return data||[];},
+    async saveMember(m){const{data,error}=await sb.from("members").update({display_name:m.display_name,can_assign:m.can_assign,can_manage:m.can_manage}).eq("id",m.id).select().single();if(error)throw error;return data;},
+    async heroes(){const{data,error}=await sb.from("heroes").select("*").eq("guild_id",this.guildId).order("created_at");if(error)throw error;return data||[];},
+    async quests(){const{data,error}=await sb.from("quests").select("*").eq("guild_id",this.guildId).order("created_at");if(error)throw error;return data||[];},
+    async completions(){const{data,error}=await sb.from("completions").select("*").eq("guild_id",this.guildId).order("completed_at",{ascending:false}).limit(800);if(error)throw error;return data||[];},
+    async saveHero(h){const row={...h,guild_id:this.guildId};const res=row.id?await sb.from("heroes").update(row).eq("id",row.id).select().single():await sb.from("heroes").insert(row).select().single();if(res.error)throw res.error;return res.data;},
+    async saveQuest(q){const row={...q,guild_id:this.guildId};const res=row.id?await sb.from("quests").update(row).eq("id",row.id).select().single():await sb.from("quests").insert(row).select().single();if(res.error)throw res.error;return res.data;},
+    async deleteQuest(id){const{error}=await sb.from("quests").delete().eq("id",id);if(error)throw error;},
+    async addCompletion(c){const{data,error}=await sb.from("completions").insert({...c,guild_id:this.guildId}).select().single();if(error)throw error;return data;},
+    async removeCompletion(id){const{error}=await sb.from("completions").delete().eq("id",id);if(error)throw error;},
   };
 }
 function randCode(){const a="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";let s="";for(let i=0;i<6;i++)s+=a[Math.floor(Math.random()*a.length)];return s;}
@@ -786,19 +786,21 @@ async function completeQuest(quest, btnEl){
   const existing=questDone(quest);
   const xp=DIFFS[quest.difficulty].xp;
   busy=true;
-  if(existing){ // desfazer
-    await store.removeCompletion(existing.id);
-  }else{
-    const before=heroStats(hero.id).level;
-    const c=await store.addCompletion({quest_id:quest.id, hero_id:hero.id, xp_earned:xp, period_key:periodKey(quest.category)});
-    if(btnEl)sparkle(btnEl);
-    toast(`<span>${quest.icon}</span> ${quest.title} <span class="t-xp">+${xp} XP</span>`);
-    await refresh(false);
-    const after=heroStats(hero.id).level;
-    if(after>before)celebrateLevel(after);
-    busy=false; render(); return;
-  }
-  await refresh(false); busy=false; render();
+  try{
+    if(existing){ // desfazer
+      await store.removeCompletion(existing.id);
+    }else{
+      const before=heroStats(hero.id).level;
+      await store.addCompletion({quest_id:quest.id, hero_id:hero.id, xp_earned:xp, period_key:periodKey(quest.category)});
+      if(btnEl)sparkle(btnEl);
+      toast(`<span>${quest.icon}</span> ${quest.title} <span class="t-xp">+${xp} XP</span>`);
+      await refresh(false);
+      const after=heroStats(hero.id).level;
+      if(after>before)celebrateLevel(after);
+      busy=false; render(); return;
+    }
+    await refresh(false); busy=false; render();
+  }catch(e){busy=false; alert("Erro ao registrar a missão: "+(e.message||e));}
 }
 
 async function refresh(showSpin=true){
@@ -1000,7 +1002,7 @@ function swBtn(m,kind,cap,manage){
   const dis=cap||!manage;
   return `<button class="sw ${on?"on":""}" ${dis?"disabled":""} onclick="togglePerm('${m.id}','${kind}')"><span class="dot"></span></button>`;
 }
-window.togglePerm=async(id,kind)=>{const m=S.members.find(x=>x.id===id);if(!m||m.role==="captain")return;if(kind==="assign")m.can_assign=!m.can_assign;else m.can_manage=!m.can_manage;await store.saveMember(m);await refresh();render();};
+window.togglePerm=async(id,kind)=>{const m=S.members.find(x=>x.id===id);if(!m||m.role==="captain")return;if(kind==="assign")m.can_assign=!m.can_assign;else m.can_manage=!m.can_manage;try{await store.saveMember(m);await refresh();render();}catch(e){alert("Erro ao salvar permissão: "+(e.message||e));}};
 window.shareCode=(code)=>{const txt="Entre na nossa Guilda do Lar com o código: "+code;if(navigator.share){navigator.share({title:"Guilda do Lar",text:txt}).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(code);toast("📋 Código copiado!");}else toast(code);};
 
 /* ---------- picker (quem está jogando) ---------- */
@@ -1194,17 +1196,21 @@ window.buyItem=async function(id){
   busy=true;
   const newInv=[...inv,id];
   const newEq={...(h.equipped||{}),[it.slot]:id}; // já equipa ao comprar
-  await store.saveHero({...h,inventory:newInv,equipped:newEq});
-  toast(`🛒 <b>${it.name}</b> comprado! <span class="t-xp">-${fmt(it.price)} 🪙</span>`);
-  await refresh(false); busy=false; render();
+  try{
+    await store.saveHero({...h,inventory:newInv,equipped:newEq});
+    toast(`🛒 <b>${it.name}</b> comprado! <span class="t-xp">-${fmt(it.price)} 🪙</span>`);
+    await refresh(false); busy=false; render();
+  }catch(e){busy=false; alert("Erro na compra: "+(e.message||e));}
 };
 window.equipItem=async function(id){
   if(busy)return; const h=activeHero(); const it=itemById(id); if(!h||!it)return;
   busy=true;
   const eq={...(h.equipped||{})};
   if(eq[it.slot]===id)delete eq[it.slot]; else eq[it.slot]=id; // toca pra equipar, toca de novo pra tirar
-  await store.saveHero({...h,equipped:eq});
-  await refresh(false); busy=false; render();
+  try{
+    await store.saveHero({...h,equipped:eq});
+    await refresh(false); busy=false; render();
+  }catch(e){busy=false; alert("Erro ao equipar: "+(e.message||e));}
 };
 
 /* ---------- empty ---------- */
@@ -1261,7 +1267,9 @@ window.saveHero=async function(){
   if(!n){document.getElementById("hName").focus();return;}
   const payload={...heroDraft,name:n,hero_class:cl};
   if(onboardingHero && ME())payload.member_id=ME().id;
-  await store.saveHero(payload);
+  try{
+    await store.saveHero(payload);
+  }catch(e){alert("Não consegui salvar o herói: "+(e.message||e));return;}
   closeSheet();
   if(onboardingHero){onboardingHero=false;await enterApp();return;}
   await refresh(false); render();
@@ -1301,11 +1309,13 @@ window.openQuestForm=openQuestForm; window.renderQuestForm=renderQuestForm;
 window.saveQuest=async function(){
   const t=document.getElementById("qTitle").value.trim();
   if(!t){document.getElementById("qTitle").focus();return;}
-  await store.saveQuest({...questDraft,title:t});
+  try{await store.saveQuest({...questDraft,title:t});}
+  catch(e){alert("Erro ao salvar a missão: "+(e.message||e));return;}
   closeSheet(); await refresh(false); render();
 };
 window.deleteQuest=async function(id){
-  await store.deleteQuest(id); closeSheet(); await refresh(false); render();
+  try{await store.deleteQuest(id);}catch(e){alert("Erro ao excluir: "+(e.message||e));return;}
+  closeSheet(); await refresh(false); render();
 };
 
 /* =========================================================================
