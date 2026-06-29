@@ -807,9 +807,11 @@ async function completeQuest(quest, btnEl){
 }
 
 async function refresh(showSpin=true){
-  if(S.screen!=="app")return;
-  const [h,q,c,mem]=await Promise.all([store.heroes(),store.quests(),store.completions(),store.members?store.members():Promise.resolve([])]);
-  S.heroes=h; S.quests=q; S.completions=c; S.members=mem;
+  if(store && store.mode==="supabase" && !store.guildId) return; // ainda sem família definida
+  try{
+    const [h,q,c,mem]=await Promise.all([store.heroes(),store.quests(),store.completions(),store.members?store.members():Promise.resolve([])]);
+    S.heroes=h; S.quests=q; S.completions=c; S.members=mem;
+  }catch(e){ console.error("refresh:",e); }
   if(S.activeHeroId && !heroById(S.activeHeroId))S.activeHeroId=null;
 }
 
@@ -1295,11 +1297,17 @@ window.saveHero=async function(){
   if(!n){document.getElementById("hName").focus();return;}
   const payload={...heroDraft,name:n,hero_class:cl};
   if(onboardingHero && ME())payload.member_id=ME().id;
-  try{
-    await store.saveHero(payload);
-  }catch(e){alert("Não consegui salvar o herói: "+(e.message||e));return;}
+  let saved;
+  try{ saved=await store.saveHero(payload); }
+  catch(e){ alert("Não consegui salvar o herói: "+(e.message||e)); return; }
   closeSheet();
-  if(onboardingHero){onboardingHero=false;await enterApp();return;}
+  if(onboardingHero){
+    onboardingHero=false;
+    S.screen="app"; S.view="quests";
+    try{ await refresh(false); }catch(e){ console.warn(e); }
+    S.activeHeroId=(saved&&saved.id)?saved.id:myHeroId();
+    render(); return;
+  }
   await refresh(false); render();
 };
 
