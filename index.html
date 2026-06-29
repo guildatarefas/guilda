@@ -638,9 +638,17 @@ async function buildSupabaseStore(){
       const uid=this.session.user.id, code=randCode();
       const{data:g,error}=await sb.from("guilds").insert({name:name,invite_code:code,captain_id:uid}).select().single();
       if(error)throw error;
-      const dn=(this.session.user.email||"Capitão").split("@")[0];
-      const{data:m,error:e2}=await sb.from("members").insert({guild_id:g.id,user_id:uid,display_name:dn,role:"captain",can_assign:true,can_manage:true}).select().single();
-      if(e2)throw e2;
+      // o capitão é criado automaticamente por gatilho no banco; aqui só carregamos o vínculo
+      let m=null;
+      for(let i=0;i<6 && !m;i++){
+        const{data:rows}=await sb.from("members").select("*").eq("guild_id",g.id).eq("user_id",uid).limit(1);
+        if(rows&&rows.length)m=rows[0]; else await new Promise(r=>setTimeout(r,300));
+      }
+      if(!m){ // fallback caso o gatilho não exista
+        const dn=(this.session.user.email||"Capitão").split("@")[0];
+        const ins=await sb.from("members").insert({guild_id:g.id,user_id:uid,display_name:dn,role:"captain",can_assign:true,can_manage:true}).select().single();
+        m=ins.data;
+      }
       this.guild=g; this.guildId=g.id; this.me=m;
     },
     async joinGuild(code){
