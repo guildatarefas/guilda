@@ -287,6 +287,10 @@ h2.title{font-family:var(--serif);font-weight:700;font-size:21px;margin:0 0 2px;
 .auth-toggle button{flex:1;padding:11px;border-radius:9px;font-size:13.5px;font-weight:600;color:var(--ink-faint)}
 .auth-toggle button.on{background:linear-gradient(180deg,var(--panel-3),var(--panel-2));color:var(--gold-soft);box-shadow:var(--shadow)}
 .auth-wrap .field input{text-align:center}
+.pass-field{position:relative}
+.pass-field input{padding-right:46px!important}
+.pass-field .eye{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:16px;background:transparent}
+.pass-field .eye:active{transform:translateY(-50%) scale(.9)}
 .auth-msg{font-size:12.5px;color:var(--gold-soft);background:rgba(232,180,92,.1);border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:14px;line-height:1.4}
 .gate-card{background:linear-gradient(170deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:12px;text-align:left}
 .gate-t{font-family:var(--serif);font-weight:600;font-size:15px;margin-bottom:12px;color:var(--gold-soft)}
@@ -335,8 +339,8 @@ h2.title{font-family:var(--serif);font-weight:700;font-size:21px;margin:0 0 2px;
    ========================================================================= */
 
 // ▼▼▼ COLE AQUI AS SUAS CREDENCIAIS DO SUPABASE (instruções no fim do arquivo) ▼▼▼
-const SUPABASE_URL  = "COLE_SUA_URL_AQUI";
-const SUPABASE_ANON = "COLE_SUA_ANON_KEY_AQUI";
+const SUPABASE_URL  = "https://gffvoilwgrtgytaukgin.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmZnZvaWx3Z3J0Z3l0YXVrZ2luIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3MDc3MDAsImV4cCI6MjA5ODI4MzcwMH0.PKN_Gl3fR1vCPM7NEjsd7NiNmZNaz4JPHgD7-Lkz2o0";
 // ▲▲▲ ─────────────────────────────────────────────────────────────────── ▲▲▲
 
 const GUILD_NAME = "Guilda do Lar";
@@ -613,11 +617,14 @@ function loadScript(src){return new Promise((res,rej)=>{const s=document.createE
 async function buildSupabaseStore(){
   await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2");
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  sb.auth.onAuthStateChange((event)=>{ if(event==="PASSWORD_RECOVERY"){ S.screen="resetpass"; S.authMsg=""; try{render();}catch(e){} } });
   return {
     mode:"supabase", sb, session:null, me:null, guild:null, guildId:null,
     async signUp(email,pass){const{data,error}=await sb.auth.signUp({email,password:pass});if(error)throw error;return data;},
     async signIn(email,pass){const{error}=await sb.auth.signInWithPassword({email,password:pass});if(error)throw error;},
     async signOut(){await sb.auth.signOut();this.session=null;this.me=null;this.guild=null;this.guildId=null;},
+    async resetPassword(email){const{error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.href.split("#")[0]});if(error)throw error;},
+    async updatePassword(pass){const{error}=await sb.auth.updateUser({password:pass});if(error)throw error;},
     async bootstrap(){
       const{data:{session}}=await sb.auth.getSession();
       this.session=session;
@@ -684,6 +691,8 @@ function buildDemoStore(){
     mode:"demo", session:{user:{email:"mateus@demo"}}, me:m1, guild:g, guildId:"g1",
     async bootstrap(){return "app";},
     async signOut(){toast("No app publicado, isso encerra a sessão");},
+    async resetPassword(){toast("No app publicado, enviaríamos um link por e-mail");},
+    async updatePassword(){toast("Senha redefinida (demo)");},
     async createGuild(){}, async joinGuild(){},
     async members(){return JSON.parse(JSON.stringify(db.members));},
     async saveMember(m){const i=db.members.findIndex(x=>x.id===m.id);if(i>=0)db.members[i]={...db.members[i],...m};return db.members[i];},
@@ -798,6 +807,7 @@ const app=document.getElementById("app");
 
 function render(){
   if(S.screen==="auth"){renderAuth();return;}
+  if(S.screen==="resetpass"){renderResetPassword();return;}
   if(S.screen==="family"){renderFamilyGate();return;}
   if(S.screen==="heroOnboard"){renderHeroOnboard();return;}
   if(S.view==="forja" && !canAssign())S.view="quests";
@@ -858,11 +868,47 @@ function renderAuth(){
       <button class="${S.authMode==="signup"?"on":""}" onclick="S.authMode='signup';S.authMsg='';render()">Criar conta</button>
     </div>
     <div class="field"><input type="email" id="authEmail" placeholder="seu@email.com" autocomplete="email"></div>
-    <div class="field"><input type="password" id="authPass" placeholder="senha (mín. 6 caracteres)" autocomplete="current-password"></div>
+    <div class="field pass-field">
+      <input type="password" id="authPass" placeholder="senha (mín. 6 caracteres)" autocomplete="current-password">
+      <button type="button" class="eye" onclick="toggleVis('authPass',this)">👁️</button>
+    </div>
     ${S.authMsg?`<div class="auth-msg">${S.authMsg}</div>`:""}
     <button class="btn-primary" onclick="doAuth()">${S.authMode==="login"?"Entrar":"Criar conta"}</button>
+    <button class="btn-ghost" onclick="doForgot()">Esqueci minha senha</button>
   </div>`;
 }
+window.toggleVis=(id,btn)=>{const el=document.getElementById(id);if(!el)return;const hidden=el.type==="password";el.type=hidden?"text":"password";btn.textContent=hidden?"🙈":"👁️";};
+window.doForgot=async function(){
+  const email=val("authEmail");
+  if(!email){S.authMsg="Digite seu e-mail no campo acima e toque em 'Esqueci minha senha' de novo.";render();return;}
+  try{await store.resetPassword(email);S.authMsg="Enviamos um link de redefinição para "+email+". Confira a caixa de entrada (e o spam).";render();}
+  catch(e){S.authMsg=e.message||"Não foi possível enviar o link.";render();}
+};
+function renderResetPassword(){
+  app.innerHTML=`<div class="auth-wrap">
+    <div class="picker-crest">🔑</div>
+    <h1>Nova senha</h1>
+    <div class="sub">Defina a nova senha da sua conta.</div>
+    <div class="field pass-field">
+      <input type="password" id="newPass" placeholder="nova senha (mín. 6 caracteres)">
+      <button type="button" class="eye" onclick="toggleVis('newPass',this)">👁️</button>
+    </div>
+    ${S.authMsg?`<div class="auth-msg">${S.authMsg}</div>`:""}
+    <button class="btn-primary" onclick="doSetNewPass()">Salvar nova senha</button>
+  </div>`;
+}
+window.doSetNewPass=async function(){
+  const p=val("newPass");
+  if(p.length<6){S.authMsg="A senha precisa ter ao menos 6 caracteres.";render();return;}
+  try{
+    await store.updatePassword(p);
+    S.authMsg="";
+    const st=await store.bootstrap();
+    if(st==="family"){S.screen="family";render();}
+    else if(st==="app"){await enterApp();}
+    else{S.screen="auth";S.authMsg="Senha alterada! Entre com a nova senha.";render();}
+  }catch(e){S.authMsg=e.message||"Não foi possível salvar.";render();}
+};
 window.doAuth=async function(){
   const email=val("authEmail"), pass=val("authPass");
   if(!email||!pass){S.authMsg="Preencha e-mail e senha.";render();return;}
