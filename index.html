@@ -746,7 +746,10 @@ function myHeroId(){const m=ME();if(!m)return null;const h=S.heroes.find(x=>x.me
 function val(id){const el=document.getElementById(id);return el?el.value.trim():"";}
 async function enterApp(){
   await refresh();
-  if(ME() && !myHeroId()){S.screen="heroOnboard";render();return;}
+  if(ME() && !myHeroId()){
+    if(S.heroes.length>0){S.screen="claim";render();return;}  // já há heróis: deixa assumir/criar
+    S.screen="heroOnboard";render();return;                    // nenhum herói: cria do zero
+  }
   S.activeHeroId=myHeroId(); S.screen="app"; S.view="quests"; render();
 }
 
@@ -820,6 +823,7 @@ function render(){
   if(S.screen==="resetpass"){renderResetPassword();return;}
   if(S.screen==="family"){renderFamilyGate();return;}
   if(S.screen==="heroOnboard"){renderHeroOnboard();return;}
+  if(S.screen==="claim"){renderClaim();return;}
   if(S.view==="forja" && !canAssign())S.view="quests";
   if(S.view==="familia" && !canManage())S.view="quests";
   if(!S.activeHeroId){const mh=myHeroId();if(mh)S.activeHeroId=mh;else{renderPicker();return;}}
@@ -968,6 +972,30 @@ function renderHeroOnboard(){
 }
 let onboardingHero=false;
 window.startMyHero=()=>{onboardingHero=true;openHeroForm();};
+
+/* ---------- assumir um herói já existente (destrava vínculo) ---------- */
+function renderClaim(){
+  const meId=ME()?ME().id:null;
+  app.innerHTML=`<div class="auth-wrap">
+    <div class="picker-crest">🧝</div>
+    <h1>Qual herói é o seu?</h1>
+    <div class="sub">Encontrei ${S.heroes.length} herói(s) na ${store.guild?store.guild.name:"família"}. Toque no seu pra vinculá-lo à sua conta, ou crie um novo.</div>
+    ${S.heroes.map(h=>{const st=heroStats(h.id);const mine=h.member_id===meId;const dono=h.member_id&&S.members.find(m=>m.id===h.member_id);
+      return `<button class="hero-pick" style="--hero-color:${h.color}" onclick="claimHero('${h.id}')">
+        ${avatarHTML(h,54)}
+        <div><div class="hp-n">${h.name}${titleStr(h)}</div><div class="hp-l">Nível ${st.level} · ${mine?"já é seu":(dono?("de "+dono.display_name):"sem dono")}</div></div>
+        <div class="hp-go">→</div>
+      </button>`;}).join("")}
+    <button class="btn-primary" style="margin-top:14px" onclick="startMyHero()">✨ Criar um novo herói</button>
+    <button class="btn-ghost" onclick="openMenu()">⋯ Menu / Sair</button>
+  </div>`;
+}
+window.claimHero=async function(id){
+  const h=S.heroes.find(x=>x.id===id); if(!h||!ME())return;
+  try{ await store.saveHero({...h, member_id:ME().id}); }
+  catch(e){ alert("Não consegui vincular: "+(e.message||e)); return; }
+  await enterApp();
+};
 
 /* ---------- gestão da família ---------- */
 function renderFamily(c){
