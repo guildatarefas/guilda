@@ -319,6 +319,25 @@ h2.title{font-family:var(--serif);font-weight:700;font-size:21px;margin:0 0 2px;
 .sw.on .dot{left:21px;background:#1c1308}
 .sw:disabled{opacity:.55}
 .fam-hint{font-size:11.5px;color:var(--ink-faint);line-height:1.5;margin-top:16px;padding:0 2px}
+
+/* ranking do placar */
+.rank-row{display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:14px;margin-top:10px;background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line)}
+.rank-row.lead{border-color:var(--hero-color,var(--gold));box-shadow:0 0 20px -10px var(--hero-color,var(--gold))}
+.rk-pos{width:26px;flex:none;text-align:center;font-size:19px}
+.rk-pos .rk-n{font-family:var(--serif);font-weight:700;color:var(--ink-faint);font-size:15px}
+.rk-info{flex:1;min-width:0}
+.rk-name{font-weight:600;font-size:14.5px;line-height:1.2}
+.rk-sub{font-size:11.5px;color:var(--ink-dim);margin-top:2px}
+.rk-rewards{margin-top:4px;font-size:14px;letter-spacing:2px}
+.rk-xp{flex:none;font-family:var(--serif);font-weight:700;font-size:18px;color:var(--gold-soft);text-align:right}
+.rk-xp small{display:block;font-size:9px;color:var(--ink-faint);font-weight:400;letter-spacing:.1em}
+
+/* recompensas */
+.reward-intro{font-size:12px;color:var(--ink-dim);line-height:1.45;margin-bottom:10px}
+.reward-empty{font-size:12.5px;color:var(--ink-faint);text-align:center;padding:18px;border:1px dashed var(--line);border-radius:13px}
+.shop-item{position:relative}
+.rw-del{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;background:rgba(217,106,106,.18);border:1px solid rgba(217,106,106,.4);color:var(--danger);font-size:12px;display:grid;place-items:center;line-height:1}
+.rw-del:active{transform:scale(.88)}
 </style>
 </head>
 <body>
@@ -439,7 +458,8 @@ const SHOP = [
   {id:"t_unbeat",slot:"title", name:"o Imbatível",        emoji:"📜", text:"o Imbatível",        price:1100},
   {id:"t_legend",slot:"title", name:"Lenda do Lar",       emoji:"📜", text:"Lenda do Lar",       price:2800},
 ];
-function itemById(id){return SHOP.find(i=>i.id===id);}
+function customItems(){return (store&&store.guild&&store.guild.custom_items)||[];}
+function itemById(id){return SHOP.find(i=>i.id===id)||customItems().find(i=>i.id===id);}
 function fmt(n){return (n||0).toLocaleString("pt-BR");}
 function equippedTitle(h){const id=(h.equipped||{}).title;const it=id?itemById(id):null;return it?it.text:"";}
 function titleStr(h){const t=equippedTitle(h);return t?` <span class="title-tag">${t}</span>`:"";}
@@ -667,13 +687,20 @@ async function buildSupabaseStore(){
     async deleteQuest(id){const{error}=await sb.from("quests").delete().eq("id",id);if(error)throw error;},
     async addCompletion(c){const{data,error}=await sb.from("completions").insert({...c,guild_id:this.guildId}).select().single();if(error)throw error;return data;},
     async removeCompletion(id){const{error}=await sb.from("completions").delete().eq("id",id);if(error)throw error;},
+    async deleteHero(id){const{error}=await sb.from("heroes").delete().eq("id",id);if(error)throw error;},
+    async setCustomItems(items){const{data,error}=await sb.from("guilds").update({custom_items:items}).eq("id",this.guildId).select().single();if(error)throw error;this.guild=data;return data;},
+    async reloadGuild(){const{data}=await sb.from("guilds").select("*").eq("id",this.guildId).single();if(data)this.guild=data;return data;},
   };
 }
 function randCode(){const a="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";let s="";for(let i=0;i<6;i++)s+=a[Math.floor(Math.random()*a.length)];return s;}
 
 function buildDemoStore(){
   const uid=()=>"d_"+Math.random().toString(36).slice(2,10);
-  const g={id:"g1",name:"Família Demo",invite_code:"GUILDA1"};
+  const g={id:"g1",name:"Família Demo",invite_code:"GUILDA1",custom_items:[
+    {id:"cust_game",name:"1h de Videogame",emoji:"🎮",price:200,slot:"reward"},
+    {id:"cust_ice", name:"Sorvete",        emoji:"🍦",price:120,slot:"reward"},
+    {id:"cust_movie",name:"Cinema",        emoji:"🎬",price:500,slot:"reward"}
+  ]};
   const m1={id:"m1",guild_id:"g1",display_name:"Mateus",role:"captain",can_assign:true,can_manage:true,created_at:"1"};
   const m2={id:"m2",guild_id:"g1",display_name:"Giovana",role:"member",can_assign:true,can_manage:false,created_at:"2"};
   const m3={id:"m3",guild_id:"g1",display_name:"Pedro",role:"member",can_assign:false,can_manage:false,created_at:"3"};
@@ -712,6 +739,9 @@ function buildDemoStore(){
     async deleteQuest(id){db.quests=db.quests.filter(x=>x.id!==id);},
     async addCompletion(c){c.id=uid();c.guild_id="g1";c.completed_at=new Date().toISOString();db.completions.unshift(c);return c;},
     async removeCompletion(id){db.completions=db.completions.filter(x=>x.id!==id);},
+    async deleteHero(id){db.heroes=db.heroes.filter(x=>x.id!==id);},
+    async setCustomItems(items){g.custom_items=items;return g;},
+    async reloadGuild(){return g;},
   };
 }
 
@@ -809,6 +839,7 @@ async function completeQuest(quest, btnEl){
 async function refresh(showSpin=true){
   if(store && store.mode==="supabase" && !store.guildId) return; // ainda sem família definida
   try{
+    if(store.reloadGuild)await store.reloadGuild();
     const [h,q,c,mem]=await Promise.all([store.heroes(),store.quests(),store.completions(),store.members?store.members():Promise.resolve([])]);
     S.heroes=h; S.quests=q; S.completions=c; S.members=mem;
   }catch(e){ console.error("refresh:",e); }
@@ -1015,10 +1046,26 @@ function renderFamily(c){
     </div>
     <div class="section-eyebrow" style="margin-top:22px">Membros · ${S.members.length}</div>
     ${S.members.map(m=>memberRow(m,manage)).join("")}
+    <div class="section-eyebrow" style="margin-top:22px">Heróis · ${S.heroes.length}</div>
+    ${S.heroes.map(h=>{const st=heroStats(h.id);const owner=h.member_id&&S.members.find(m=>m.id===h.member_id);
+      return `<div class="manage-q">
+        <div style="flex:none">${avatarHTML(h,30)}</div>
+        <div class="mq-b"><div class="mq-t">${h.name}</div><div class="mq-m">Nível ${st.level} · ${st.done} missões${owner?" · "+owner.display_name:" · sem conta"}</div></div>
+        ${manage?`<button class="icon-btn" onclick="confirmDeleteHero('${h.id}')" title="Excluir herói">🗑️</button>`:""}
+      </div>`;}).join("")}
     ${manage?`<button class="add-quest-btn" style="margin-top:14px" onclick="openHeroForm()">✦ Adicionar herói (criança sem conta)</button>`:""}
-    <div class="fam-hint">As permissões valem para a conta de cada pessoa. Quem não pode “criar tarefas” não vê a Forja; quem não pode “gerenciar” não vê esta tela.</div>
+    <div class="fam-hint">As permissões valem para a conta de cada pessoa. Quem não pode “criar tarefas” não vê a Forja; quem não pode “gerenciar” não vê esta tela. Excluir um herói apaga o histórico de XP dele.</div>
   `;
 }
+window.confirmDeleteHero=async function(id){
+  const h=S.heroes.find(x=>x.id===id); if(!h)return;
+  if(!confirm(`Excluir o herói "${h.name}"? Isso apaga o XP e o histórico dele. Não dá pra desfazer.`))return;
+  try{
+    await store.deleteHero(id);
+    if(S.activeHeroId===id)S.activeHeroId=null;
+    await refresh(false); render();
+  }catch(e){ alert("Erro ao excluir: "+(e.message||e)); }
+};
 function memberRow(m,manage){
   const cap=m.role==="captain";
   return `<div class="member-row">
@@ -1114,33 +1161,35 @@ function renderHeroi(c){
 
 /* ---------- placar ---------- */
 function renderPlacar(c){
-  const [a,b]=S.heroes; const sa=heroStats(a.id), sb=heroStats(b.id);
-  const guildXp=sa.xp+sb.xp, guildDone=sa.done+sb.done;
-  const aLead=sa.xp>=sb.xp;
+  const heroes=[...S.heroes].map(h=>({h,st:heroStats(h.id)})).sort((x,y)=>y.st.xp-x.st.xp);
+  const guildXp=heroes.reduce((s,x)=>s+x.st.xp,0);
+  const guildDone=heroes.reduce((s,x)=>s+x.st.done,0);
   c.innerHTML=`
     <div class="section-eyebrow">Salão da guilda</div>
     <h2 class="title">Placar</h2>
     <div class="guild-bar" style="margin-top:14px">
-      <div class="gb-top"><span class="gb-l">🏰 XP da Guilda</span><span class="gb-v">${guildXp} XP</span></div>
+      <div class="gb-top"><span class="gb-l">🏰 XP da Guilda</span><span class="gb-v">${fmt(guildXp)} XP</span></div>
       <div class="xpbar"><div class="fill" style="width:${guildXp%1000/10}%"></div></div>
-      <div style="font-size:11.5px;color:var(--ink-faint);margin-top:8px">${guildDone} missões cumpridas juntos · próximo marco em ${1000-(guildXp%1000)} XP</div>
+      <div style="font-size:11.5px;color:var(--ink-faint);margin-top:8px">${guildDone} missões cumpridas juntos · próximo marco em ${fmt(1000-(guildXp%1000))} XP</div>
     </div>
-    <div class="versus">
-      ${vcard(a,sa,aLead)}
-      <div class="vs-mid">VS</div>
-      ${vcard(b,sb,!aLead)}
-    </div>
+    ${heroes.map((x,i)=>rankRow(x.h,x.st,i)).join("")}
     <div class="section-eyebrow" style="margin-top:20px">Feitos recentes</div>
     <div id="feed"></div>`;
   renderFeed(document.getElementById("feed"));
 }
-function vcard(h,st,lead){
-  return `<div class="vcard ${lead?"lead":""}" style="--hero-color:${h.color};position:relative">
-    ${lead?'<div class="crown">👑</div>':""}
-    <div style="display:flex;justify-content:center;margin-bottom:2px">${avatarHTML(h,50)}</div>
-    <div class="v-name">${h.name}</div>
-    <div class="v-lvl">Nível ${st.level} · 🪙 ${fmt(st.goldBal)}</div>
-    <div class="v-xp">${st.xp}<small>XP total</small></div>
+function rankRow(h,st,i){
+  const medals=["🥇","🥈","🥉"];
+  const pos=i<3?medals[i]:`<span class="rk-n">${i+1}</span>`;
+  const rewards=(h.inventory||[]).map(id=>itemById(id)).filter(it=>it&&it.slot==="reward");
+  return `<div class="rank-row ${i===0?"lead":""}" style="--hero-color:${h.color}">
+    <div class="rk-pos">${pos}</div>
+    ${avatarHTML(h,46)}
+    <div class="rk-info">
+      <div class="rk-name">${h.name}${titleStr(h)}</div>
+      <div class="rk-sub">Nv ${st.level} · ${st.done} missões · 🪙 ${fmt(st.goldBal)}</div>
+      ${rewards.length?`<div class="rk-rewards">${rewards.map(r=>`<span title="${r.name}">${r.emoji}</span>`).join("")}</div>`:""}
+    </div>
+    <div class="rk-xp">${fmt(st.xp)}<small>XP</small></div>
   </div>`;
 }
 function renderFeed(el){
@@ -1216,8 +1265,63 @@ function renderMercado(c){
           </div>`;
         }).join("")}
       </div>`;
-    }).join("")}`;
+    }).join("")}
+    <div class="section-eyebrow" style="margin-top:18px">🎁 Recompensas da família</div>
+    <div class="reward-intro">Junte Gold fazendo tarefas e troque por prêmios de verdade. ${canManage()?"Como capitão, você define os prêmios.":""}</div>
+    ${canManage()?`<button class="add-quest-btn" style="margin:4px 0 12px" onclick="openRewardForm()">✦ Adicionar recompensa</button>`:""}
+    ${customItems().length?`<div class="shop-grid">
+      ${customItems().map(it=>{
+        const owned=inv.includes(it.id); const canBuy=st.goldBal>=it.price;
+        let btn;
+        if(owned)btn=`<button class="shop-btn on">Resgatado ✓</button>`;
+        else if(canBuy)btn=`<button class="shop-btn buy" onclick="buyItem('${it.id}')">🪙 ${fmt(it.price)}</button>`;
+        else btn=`<button class="shop-btn locked">🔒 ${fmt(it.price)}</button>`;
+        return `<div class="shop-item ${owned?"owned":""}">
+          ${canManage()?`<button class="rw-del" onclick="removeReward('${it.id}')">✕</button>`:""}
+          <div class="si-em">${it.emoji}</div>
+          <div class="si-n">${it.name}</div>
+          ${btn}
+          ${owned&&canManage()?`<button class="shop-btn equip" style="margin-top:6px" onclick="undoReward('${h.id}','${it.id}')">Entregue (devolver)</button>`:""}
+        </div>`;
+      }).join("")}
+    </div>`:`<div class="reward-empty">Nenhuma recompensa ainda.${canManage()?" Toque acima pra criar a primeira 🎮":""}</div>`}
+    <div style="height:8px"></div>`;
 }
+
+/* --- recompensas (capitão) --- */
+const REWARD_EMOJIS=["🎮","🍦","🍕","🎬","🧸","⚽","🎁","💸","📱","🎢","🍔","🛹","🎨","📚","🏊","🎯","🚲","🎸"];
+let rewardDraft={};
+function openRewardForm(){rewardDraft={name:"",emoji:"🎮",price:200};renderRewardForm();}
+function renderRewardForm(){
+  openSheet(`
+    <h3>Nova recompensa</h3>
+    <div class="field"><label>O que a pessoa ganha?</label><input type="text" id="rwName" value="${(rewardDraft.name||"").replace(/"/g,"&quot;")}" placeholder="Ex: 1h de videogame" maxlength="32"></div>
+    <div class="field"><label>Ícone</label><div class="emoji-grid">
+      ${REWARD_EMOJIS.map(e=>`<button class="${rewardDraft.emoji===e?"sel":""}" onclick="rewardDraft.emoji='${e}';renderRewardForm()">${e}</button>`).join("")}
+    </div></div>
+    <div class="field"><label>Custo em Gold 🪙</label><input type="text" inputmode="numeric" id="rwPrice" value="${rewardDraft.price}" placeholder="200"></div>
+    <button class="btn-primary" onclick="saveReward()">Criar recompensa</button>
+    <button class="btn-ghost" onclick="closeSheet()">Cancelar</button>
+  `);
+  const n=document.getElementById("rwName"); if(n)n.addEventListener("input",e=>rewardDraft.name=e.target.value);
+  const p=document.getElementById("rwPrice"); if(p)p.addEventListener("input",e=>rewardDraft.price=parseInt(e.target.value.replace(/\D/g,""))||0);
+}
+window.openRewardForm=openRewardForm; window.renderRewardForm=renderRewardForm;
+window.saveReward=async function(){
+  const name=(document.getElementById("rwName").value||"").trim();
+  const price=parseInt((document.getElementById("rwPrice").value||"").replace(/\D/g,""))||0;
+  if(!name){document.getElementById("rwName").focus();return;}
+  if(price<1){document.getElementById("rwPrice").focus();return;}
+  const items=[...customItems(),{id:"cust_"+Math.random().toString(36).slice(2,9),name:name,emoji:rewardDraft.emoji,price:price,slot:"reward"}];
+  try{ await store.setCustomItems(items); closeSheet(); await refresh(false); render(); }
+  catch(e){ alert("Erro ao salvar recompensa: "+(e.message||e)); }
+};
+window.removeReward=async function(id){
+  if(!confirm("Remover esta recompensa da loja?"))return;
+  const items=customItems().filter(x=>x.id!==id);
+  try{ await store.setCustomItems(items); await refresh(false); render(); }
+  catch(e){ alert("Erro: "+(e.message||e)); }
+};
 window.buyItem=async function(id){
   if(busy)return; const h=activeHero(); const it=itemById(id); if(!h||!it)return;
   const st=heroStats(h.id); const inv=h.inventory||[];
@@ -1225,12 +1329,21 @@ window.buyItem=async function(id){
   if(st.goldBal<it.price){toast(`🪙 Gold insuficiente — faltam ${fmt(it.price-st.goldBal)}`);return;}
   busy=true;
   const newInv=[...inv,id];
-  const newEq={...(h.equipped||{}),[it.slot]:id}; // já equipa ao comprar
+  const newEq={...(h.equipped||{})};
+  if(it.slot!=="reward")newEq[it.slot]=id; // recompensa não veste o avatar
   try{
     await store.saveHero({...h,inventory:newInv,equipped:newEq});
-    toast(`🛒 <b>${it.name}</b> comprado! <span class="t-xp">-${fmt(it.price)} 🪙</span>`);
+    if(it.slot==="reward")toast(`🎁 <b>${it.name}</b> resgatado! Avise os pais 😄 <span class="t-xp">-${fmt(it.price)} 🪙</span>`);
+    else toast(`🛒 <b>${it.name}</b> comprado! <span class="t-xp">-${fmt(it.price)} 🪙</span>`);
     await refresh(false); busy=false; render();
   }catch(e){busy=false; alert("Erro na compra: "+(e.message||e));}
+};
+window.undoReward=async function(heroId,itemId){
+  const h=S.heroes.find(x=>x.id===heroId); if(!h)return;
+  if(!confirm("Desfazer este resgate? O Gold volta para o herói."))return;
+  const inv=(h.inventory||[]).filter(x=>x!==itemId);
+  try{ await store.saveHero({...h,inventory:inv}); await refresh(false); render(); }
+  catch(e){ alert("Erro: "+(e.message||e)); }
 };
 window.equipItem=async function(id){
   if(busy)return; const h=activeHero(); const it=itemById(id); if(!h||!it)return;
